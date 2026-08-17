@@ -28,6 +28,7 @@ dist/
 # Project outputs
 models/
 models1/
+Optimisedmodel/
 checkpoints/
 logs/
 video_errors.txt

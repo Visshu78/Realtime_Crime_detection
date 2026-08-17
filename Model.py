@@ -54,7 +54,7 @@ class Config:
     VIOLENCE_DIR = os.path.join(ROOT_DATA, "Violence")
     NON_VIOLENCE_DIR = os.path.join(ROOT_DATA, "NonViolence")
 
-    OUTPUT_DIR = "models1"
+    OUTPUT_DIR = "Optimisedmodel"
     BEST_MODEL_PATH = os.path.join(OUTPUT_DIR, "best_3dcnn_crime_detector.pth")
 
     MAX_FRAMES = 24
