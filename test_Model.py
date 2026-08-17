@@ -147,33 +147,22 @@ def create_clips(frames):
 # PREDICT ONE CLIP
 # ============================================================
 
-def predict_clip(clip):
-
+def predict_clip(clip, use_tta=True):
     # Calculate motion
     clip = compute_motion(clip)
 
-    # Convert:
-    #
-    # (T, H, W, C)
-    #
-    # to:
-    #
-    # (C, T, H, W)
-
-    tensor = torch.FloatTensor(
-        clip
-    ).permute(3, 0, 1, 2)
-
-    # Add batch dimension
-    tensor = tensor.unsqueeze(0)
-
-    tensor = tensor.to(device)
+    # Convert: (T, H, W, C) -> (C, T, H, W)
+    tensor = torch.FloatTensor(clip).permute(3, 0, 1, 2).unsqueeze(0).to(device)
 
     with torch.no_grad():
-
-        output = model(tensor)
-
-        probability = torch.sigmoid(output).item()
+        if use_tta:
+            output_orig = model(tensor)
+            flipped_tensor = torch.flip(tensor, dims=[4])
+            output_flip = model(flipped_tensor)
+            probability = ((torch.sigmoid(output_orig) + torch.sigmoid(output_flip)) / 2.0).item()
+        else:
+            output = model(tensor)
+            probability = torch.sigmoid(output).item()
 
     return probability
 

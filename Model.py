@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚨 INTELLIGENT REAL-TIME CRIME DETECTION SYSTEM - VIDEO VISION TRANSFORMER
+# 🚨 INTELLIGENT REAL-TIME CRIME DETECTION SYSTEM - OPTIMIZED VideoViT v2
 # ==============================================================================
 
 import os
@@ -65,6 +65,7 @@ class Config:
     BACKBONE_LR = 3e-5
     WEIGHT_DECAY = 1e-4
     LABEL_SMOOTHING = 0.05
+    USE_TTA = True               # Test-Time Augmentation (flips video horizontally for perspective invariance)
 
     # Early Stopping Settings
     EARLY_STOP_PATIENCE = 8       # Stop if val acc doesn't improve for 8 consecutive epochs
@@ -73,7 +74,7 @@ class Config:
 VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.m4v', '.wmv')
 
 # ==============================================================================
-# DATASET LOADER & AUGMENTATION
+# DATASET LOADER & ADVANCED AUGMENTATION
 # ==============================================================================
 def load_video_frames(video_path, target_size=Config.TARGET_SIZE, max_frames=Config.MAX_FRAMES, augment=False):
     """
@@ -86,7 +87,6 @@ def load_video_frames(video_path, target_size=Config.TARGET_SIZE, max_frames=Con
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
         # Temporal sampling jitter for training
-        start_idx = 0
         if augment and total_frames > max_frames:
             max_start = max(0, total_frames - max_frames)
             start_idx = random.randint(0, max_start)
@@ -111,14 +111,21 @@ def load_video_frames(video_path, target_size=Config.TARGET_SIZE, max_frames=Con
 
         frames = np.array(frames[:max_frames])
 
-        # Spatial Data Augmentation
+        # Advanced Spatial & Color Augmentations
         if augment:
+            # Random Horizontal Flip
             if random.random() > 0.5:
                 frames = np.flip(frames, axis=2).copy()
+            # Random Brightness & Contrast
             if random.random() > 0.5:
-                alpha = random.uniform(0.85, 1.15)
-                beta = random.uniform(-0.1, 0.1)
+                alpha = random.uniform(0.80, 1.20)
+                beta = random.uniform(-0.10, 0.10)
                 frames = np.clip(frames * alpha + beta, 0.0, 1.0)
+            # Random Temporal Subsampling Jitter (skip occasional frame)
+            if random.random() > 0.7:
+                idx = np.random.choice(max_frames, size=max_frames, replace=True)
+                idx.sort()
+                frames = frames[idx]
 
         return frames
     except Exception as e:
@@ -192,33 +199,43 @@ def prepare_dataset():
     return train_paths, train_labels, val_paths, val_labels, test_paths, test_labels
 
 # ==============================================================================
-# SPATIAL-TEMPORAL VISION TRANSFORMER (VideoViT)
+# OPTIMIZED HYBRID SPATIO-TEMPORAL VISION TRANSFORMER (VideoViT v2)
 # ==============================================================================
 class VideoViT(nn.Module):
     """
-    Spatial-Temporal Vision Transformer for CCTV Crime Detection:
-    - Pretrained MobileNetV3 Spatial Feature Tokenizer (576 dims)
-    - Multi-Head Temporal Self-Attention Transformer Encoder (8 heads, 3 layers)
-    - [CLS] Token Classification Head
+    Optimized Video Vision Transformer (VideoViT v2):
+    - Pretrained MobileNetV3-Large Spatial Feature Tokenizer (960 dims -> 512 proj)
+    - 1D Temporal Depthwise Convolution for smooth local continuous motion
+    - 8-Head Temporal Multi-Head Self-Attention Transformer Encoder (3 Layers, Pre-LN)
+    - [CLS] Token Classification Head with GELU + Dropout
     """
-    def __init__(self, num_frames=Config.MAX_FRAMES, d_model=576, num_layers=3, num_heads=8):
+    def __init__(self, num_frames=Config.MAX_FRAMES, d_model=512, num_layers=3, num_heads=8):
         super(VideoViT, self).__init__()
         
-        # 1. Pretrained Spatial Tokenizer Backbone
-        backbone = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
-        self.spatial_backbone = backbone.features
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        # 1. Pretrained MobileNetV3-Large Spatial Tokenizer
+        backbone = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
+        self.spatial_backbone = backbone.features # Outputs 960 feature channels
         
-        # 2. Learnable [CLS] Token & Temporal Positional Embeddings
+        self.proj = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(960, d_model),
+            nn.LayerNorm(d_model)
+        )
+        
+        # 2. Local 1D Temporal Convolution (Smooth motion tracking across 3 adjacent frames)
+        self.temporal_conv = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1, groups=d_model)
+        
+        # 3. Learnable [CLS] Token & Temporal Positional Embeddings
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_frames + 1, d_model))
         self.pos_drop = nn.Dropout(p=0.1)
         
-        # 3. Temporal Multi-Head Self-Attention Transformer
+        # 4. Global Temporal Multi-Head Self-Attention Transformer
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=num_heads,
-            dim_feedforward=512,
+            dim_feedforward=1024,
             dropout=0.2,
             activation='gelu',
             batch_first=True,
@@ -227,7 +244,7 @@ class VideoViT(nn.Module):
         self.temporal_transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.norm = nn.LayerNorm(d_model)
         
-        # 4. Classification Head
+        # 5. Classification Head
         self.head = nn.Sequential(
             nn.Linear(d_model, 128),
             nn.GELU(),
@@ -241,21 +258,22 @@ class VideoViT(nn.Module):
     def forward(self, x):
         # Input shape: (B, C, T, H, W)
         B, C, T, H, W = x.shape
-        # Reshape to batch of frames: (B * T, C, H, W)
-        x = x.permute(0, 2, 1, 3, 4).contiguous().view(B * T, C, H, W)
+        x_frames = x.permute(0, 2, 1, 3, 4).contiguous().view(B * T, C, H, W)
         
-        # Extract spatial visual tokens
-        feat = self.spatial_backbone(x)
-        feat = self.pool(feat).view(B, T, -1)
+        # Extract Spatial Visual Tokens
+        feat = self.spatial_backbone(x_frames)
+        tokens = self.proj(feat).view(B, T, -1) # Shape: (B, T, d_model)
+        
+        # Local Temporal Motion Refinement (Residual 1D Conv)
+        tokens = tokens + self.temporal_conv(tokens.permute(0, 2, 1)).permute(0, 2, 1)
         
         # Prepend [CLS] token & add Temporal Positional Encoding
         cls_tokens = self.cls_token.expand(B, -1, -1)
-        x_tokens = torch.cat((cls_tokens, feat), dim=1)
+        x_tokens = torch.cat((cls_tokens, tokens), dim=1)
         x_tokens = self.pos_drop(x_tokens + self.pos_embed)
         
-        # Temporal Self-Attention across frames
-        trans_out = self.temporal_transformer(x_tokens)
-        trans_out = self.norm(trans_out)
+        # Global Temporal Self-Attention across frames
+        trans_out = self.norm(self.temporal_transformer(x_tokens))
         
         # Classify using [CLS] token representation
         cls_rep = trans_out[:, 0]
@@ -267,11 +285,11 @@ CNN3D_ResSE = VideoViT
 CNN3D = VideoViT
 
 # ==============================================================================
-# INFERENCE FUNCTION
+# INFERENCE WITH TEST-TIME AUGMENTATION (TTA)
 # ==============================================================================
-def predict_video(video_path, model_path=Config.BEST_MODEL_PATH):
+def predict_video(video_path, model_path=Config.BEST_MODEL_PATH, use_tta=True):
     """
-    Runs real-time crime detection inference on a single video file.
+    Runs real-time crime detection inference on a single video file with TTA.
     """
     if not os.path.exists(model_path):
         print(f"Error: Model checkpoint '{model_path}' not found.")
@@ -290,8 +308,15 @@ def predict_video(video_path, model_path=Config.BEST_MODEL_PATH):
     tensor = torch.FloatTensor(blended).permute(3, 0, 1, 2).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        logits = model(tensor)
-        prob = torch.sigmoid(logits).item()
+        if use_tta:
+            logits_orig = model(tensor)
+            flipped_tensor = torch.flip(tensor, dims=[4])
+            logits_flip = model(flipped_tensor)
+            prob = ((torch.sigmoid(logits_orig) + torch.sigmoid(logits_flip)) / 2.0).item()
+        else:
+            logits = model(tensor)
+            prob = torch.sigmoid(logits).item()
+            
         is_crime = prob > 0.50
 
     label = "CRIME / VIOLENCE DETECTED 🚨" if is_crime else "NORMAL / NON-VIOLENT ✅"
@@ -342,7 +367,7 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
 
     return running_loss / total, 100.0 * correct / total
 
-def eval_epoch(model, dataloader, criterion, device):
+def eval_epoch(model, dataloader, criterion, device, use_tta=Config.USE_TTA):
     model.eval()
     running_loss, correct, total = 0.0, 0, 0
     y_true, y_pred = [], []
@@ -350,11 +375,18 @@ def eval_epoch(model, dataloader, criterion, device):
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
             
+            if use_tta:
+                outputs1 = model(inputs)
+                flipped = torch.flip(inputs, dims=[4])
+                outputs2 = model(flipped)
+                probs = (torch.sigmoid(outputs1) + torch.sigmoid(outputs2)) / 2.0
+            else:
+                outputs = model(inputs)
+                probs = torch.sigmoid(outputs)
+
+            loss = criterion(torch.logit(probs.clamp(1e-6, 1.0 - 1e-6)), labels)
             running_loss += loss.item() * inputs.size(0)
-            probs = torch.sigmoid(outputs)
             predicted = (probs > 0.5).float()
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
@@ -405,19 +437,30 @@ def main():
     # Model & Differential Optimization
     model = VideoViT().to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nModel Initialized: Spatial-Temporal Vision Transformer (Total Parameters: {total_params:,})")
+    print(f"\nModel Initialized: Optimized VideoViT v2 (Total Parameters: {total_params:,})")
 
     criterion = nn.BCEWithLogitsLoss()
     
     # Differential Learning Rate: fine-tune backbone gently, train transformer aggressively
     optimizer = optim.AdamW([
         {'params': model.spatial_backbone.parameters(), 'lr': Config.BACKBONE_LR},
+        {'params': model.proj.parameters(), 'lr': Config.BASE_LR},
+        {'params': model.temporal_conv.parameters(), 'lr': Config.BASE_LR},
         {'params': model.temporal_transformer.parameters(), 'lr': Config.BASE_LR},
         {'params': model.head.parameters(), 'lr': Config.BASE_LR},
         {'params': [model.cls_token, model.pos_embed], 'lr': Config.BASE_LR}
     ], weight_decay=Config.WEIGHT_DECAY)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=Config.EPOCHS, eta_min=1e-6)
+    # Linear Warmup (2 epochs) followed by Cosine Annealing
+    warmup_epochs = 2
+    def lr_lambda(epoch):
+        if epoch < warmup_epochs:
+            return float(epoch + 1) / float(warmup_epochs)
+        else:
+            progress = float(epoch - warmup_epochs) / float(max(1, Config.EPOCHS - warmup_epochs))
+            return 0.5 * (1.0 + np.cos(np.pi * progress))
+
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     scaler = torch.amp.GradScaler('cuda', enabled=(device.type == "cuda"))
 
     best_val_acc = 0.0
@@ -428,7 +471,7 @@ def main():
 
     for epoch in range(Config.EPOCHS):
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, scaler, device)
-        val_loss, val_acc, _, _ = eval_epoch(model, val_loader, criterion, device)
+        val_loss, val_acc, _, _ = eval_epoch(model, val_loader, criterion, device, use_tta=Config.USE_TTA)
         scheduler.step()
 
         print(f"Epoch [{epoch+1:02d}/{Config.EPOCHS:02d}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
@@ -455,13 +498,13 @@ def main():
 
     # Evaluate Best Checkpoint on Test Set
     print("\n" + "=" * 65)
-    print("EVALUATING BEST MODEL CHECKPOINT ON TEST SET")
+    print("EVALUATING BEST MODEL CHECKPOINT ON TEST SET (WITH TTA)")
     print("=" * 65)
     
     if os.path.exists(Config.BEST_MODEL_PATH):
         model.load_state_dict(torch.load(Config.BEST_MODEL_PATH, map_location=device))
     
-    test_loss, test_acc, y_true, y_pred = eval_epoch(model, test_loader, criterion, device)
+    test_loss, test_acc, y_true, y_pred = eval_epoch(model, test_loader, criterion, device, use_tta=True)
     
     print(f"\nFinal Test Accuracy: {test_acc:.2f}%")
     print("\nCLASSIFICATION REPORT:")
