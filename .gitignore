@@ -36,6 +36,8 @@ bad_videos.txt
 # Local datasets
 Dataset/*
 !Dataset/datasetLoader.py
+UCF Dataset/
+UCF_Dataset/
 
 # Miscellaneous OS files
 .DS_Store
