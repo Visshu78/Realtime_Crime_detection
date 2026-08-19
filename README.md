@@ -82,19 +82,20 @@ Tested on the **Real Life Violence Situations Benchmark Dataset** (2,000 CCTV vi
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Baseline 3D CNN** | ~1.2M | 4.8 MB | 88.00% | `90.00%` | `90.00%` | `90.00%` |
 | **3D Res-SE CNN** | ~3.6M | 14.5 MB | 89.00% | `91.50%` | `90.00%` | `92.78%` |
-| **Video Vision Transformer (`VideoViT`)** 🏆 | **~6.7M** | **26.8 MB** | **`96.00%`** | **`94.50%`** | **`95.00%`** | **`94.06%`** |
+| **VideoViT v1** | ~6.7M | 26.8 MB | 96.00% | `94.50%` | `95.00%` | `94.06%` |
+| **Optimized VideoViT v2** 🏆 | **~9.8M** | **38.4 MB** | **`95.50%`** | **`95.50%`** | **`96.00%`** | **`95.05%`** |
 
-### 📈 VideoViT Classification Report (200 Held-Out Test Videos)
+### 📈 Phase 1 VideoViT v2 Classification Report (200 Test Videos)
 
 ```text
                  Precision    Recall    F1-Score   Support
 
-  Non-Violent     0.9495      0.9400     0.9447      100
-      Violent     0.9406      0.9500     0.9453      100
+  Non-Violent     0.9596      0.9500     0.9548      100
+      Violent     0.9505      0.9600     0.9552      100
 
-     Accuracy                            0.9450      200
-    Macro Avg     0.9450      0.9450     0.9450      200
- Weighted Avg     0.9450      0.9450     0.9450      200
+     Accuracy                            0.9550      200
+    Macro Avg     0.9550      0.9550     0.9550      200
+ Weighted Avg     0.9550      0.9550     0.9550      200
 ```
 
 ---
@@ -103,19 +104,28 @@ Tested on the **Real Life Violence Situations Benchmark Dataset** (2,000 CCTV vi
 
 ```text
 CrimeDetectionCCTV/
-├── Architecture.jpeg          # System Architecture & Flowchart Diagram
-├── Model.py                   # Video Vision Transformer (VideoViT) Training & Model
-├── test_Model.py              # Full-video multi-clip inference & evaluation script
+├── Architecture.jpeg          # Master Multi-Stage System Architecture
+├── pipeline_inference.py      # End-to-End Hierarchical Pipeline (Phase 1 + Phase 2)
 ├── requirements.txt           # Python dependencies
-├── .gitignore                 # Excluded directories (Dataset, .venv, checkpoints)
+├── .gitignore                 # Excluded datasets & checkpoints
 ├── README.md                  # Comprehensive Documentation
-├── Dataset/                   # Local dataset directory
-│   ├── datasetLoader.py       # Kagglehub automated dataset downloader
-│   ├── Violence/              # 1,000 Violent CCTV videos
-│   └── NonViolence/           # 1,000 Normal activity CCTV videos
-└── models1/                   # Checkpoints and training logs
-    ├── best_3dcnn_crime_detector.pth
-    └── training.log
+│
+├── Phase 1/                   # 🚨 PHASE 1: BINARY CRIME DETECTION GATE
+│   ├── Model.py               # Video Vision Transformer (VideoViT v2, 95.5% Acc)
+│   ├── test_Model.py          # Whole-video multi-clip Phase 1 evaluation script
+│   ├── datasetLoader.py       # Automated Real Life Violence dataset downloader
+│   └── video_check.py         # Video corruption & frame integrity validation
+│
+├── Phase 2/                   # 🥊 PHASE 2: MULTI-CLASS FINE-GRAINED CLASSIFICATION
+│   ├── MultiClassModel.py     # SlowFast Network (14-Class Action Classifier)
+│   ├── test_MultiClass.py     # Standalone Stage 2 action evaluation script
+│   └── download_ucf.py        # Automated UCF-Crime dataset downloader
+│
+├── Dataset/                   # Phase 1 Dataset (Violence vs NonViolence)
+├── UCF Dataset/               # Phase 2 Dataset (14 UCF-Crime Classes)
+└── Optimisedmodel/            # Trained weights & checkpoints
+    ├── best_3dcnn_crime_detector.pth        # Phase 1 Best Weights (95.5% Acc)
+    └── best_slowfast_crime_classifier.pth   # Phase 2 SlowFast Best Weights
 ```
 
 ---

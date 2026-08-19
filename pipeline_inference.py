@@ -10,6 +10,10 @@ import torch
 import numpy as np
 from collections import deque
 
+# Add Phase 1 and Phase 2 directories to sys.path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "Phase 1"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "Phase 2"))
+
 # Import Stage 1 and Stage 2 architectures
 from Model import VideoViT as Stage1Gate, compute_motion, Config as Stage1Config
 from MultiClassModel import SlowFastNet as Stage2Classifier, Config as Stage2Config, CRIME_CLASSES, IDX_TO_CLASS
