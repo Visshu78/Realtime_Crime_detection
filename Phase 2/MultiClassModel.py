@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚨 PHASE 2: 13-CLASS FINE-GRAINED CRIME CLASSIFIER (Multi-Clip VideoViT)
+# 🚨 PHASE 2: OPTIMIZED 13-CLASS CRIME ACTION CLASSIFIER (Anti-Overfit VideoViT)
 # ==============================================================================
 
 import os
@@ -14,7 +14,7 @@ import torch.optim as optim
 import torchvision.models as models
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import classification_report, accuracy_score, top_k_accuracy_score
 from collections import defaultdict
 from tqdm import tqdm
 
@@ -65,19 +65,19 @@ class Config:
     BEST_MODEL_PATH = os.path.join(OUTPUT_DIR, "best_multiclass_crime_classifier.pth")
 
     MAX_FRAMES = 24
-    TARGET_SIZE = (128, 128)
-    CLIPS_PER_VIDEO = 8       # Multi-clip sampling: 8 diverse 24-frame clips per video
+    TARGET_SIZE = (160, 160)     # Increased resolution for clearer limb & weapon actions
+    CLIPS_PER_VIDEO = 6
     BATCH_SIZE = 16
-    EPOCHS = 30
-    BASE_LR = 3e-4
-    BACKBONE_LR = 3e-5
-    WEIGHT_DECAY = 1e-4
-    LABEL_SMOOTHING = 0.05
+    EPOCHS = 35
+    BASE_LR = 5e-4
+    WEIGHT_DECAY = 1e-3         # Strong weight decay to regularize transformer
+    DROPOUT = 0.45              # High dropout to destroy background co-adaptation
+    LABEL_SMOOTHING = 0.10
     USE_TTA = True
 
-    EARLY_STOP_PATIENCE = 7
+    EARLY_STOP_PATIENCE = 10
 
-# 13 Pure Crime Action Categories (Excluding NormalVideos)
+# 13 Pure Crime Action Categories
 CRIME_CLASSES = [
     "Abuse", "Arrest", "Arson", "Assault", "Burglary",
     "Explosion", "Fighting", "RoadAccidents", "Robbery",
@@ -89,25 +89,24 @@ CLASS_TO_IDX = {cls_name: i for i, cls_name in enumerate(CRIME_CLASSES)}
 IDX_TO_CLASS = {i: cls_name for i, cls_name in enumerate(CRIME_CLASSES)}
 
 # ==============================================================================
-# DATASET LOADER WITH MULTI-CLIP SLICING
+# DATASET LOADER WITH MOTION-AWARE SLICING
 # ==============================================================================
 def compute_motion(frames):
     """
-    Computes frame-to-frame difference for motion dynamic representation.
+    Computes temporal difference for motion representation.
     """
     motion = np.abs(np.diff(frames, axis=0))
     first_diff = motion[0:1]
     motion = np.concatenate([first_diff, motion], axis=0)
-    blended = 0.7 * frames + 0.3 * motion
+    blended = 0.6 * frames + 0.4 * motion
     return blended
 
-class MultiClipUCFDataset(Dataset):
+class MotionAwareUCFDataset(Dataset):
     """
-    Samples multiple temporal slices across each video sequence to generate
-    thousands of rich training clips from the 950 crime videos.
+    Loads active motion clips with spatial jitter & CutMix-style frame masking.
     """
     def __init__(self, clip_samples, max_frames=Config.MAX_FRAMES, target_size=Config.TARGET_SIZE, augment=False):
-        self.clip_samples = clip_samples  # List of (list_of_24_frame_paths, class_idx)
+        self.clip_samples = clip_samples
         self.max_frames = max_frames
         self.target_size = target_size
         self.augment = augment
@@ -130,14 +129,25 @@ class MultiClipUCFDataset(Dataset):
 
         frames = np.array(frames)
 
-        # Spatial & Photometric Augmentation
+        # Robust Augmentations (Prevents Background Overfitting)
         if self.augment:
+            # Horizontal Flip
             if random.random() > 0.5:
                 frames = np.flip(frames, axis=2).copy()
+            # Random Temporal Jitter / Speed Perturbation
+            if random.random() > 0.5 and len(frames) == self.max_frames:
+                idx_pool = sorted(random.sample(range(self.max_frames), self.max_frames - 2))
+                idx_pool = [idx_pool[0]] + idx_pool + [idx_pool[-1]]
+                frames = frames[idx_pool]
+            # Photometric Color Jitter
             if random.random() > 0.5:
-                alpha = random.uniform(0.85, 1.15)
-                beta = random.uniform(-0.10, 0.10)
+                alpha = random.uniform(0.80, 1.20)
+                beta = random.uniform(-0.12, 0.12)
                 frames = np.clip(frames * alpha + beta, 0.0, 1.0)
+            # Random Temporal Erasing (Black out 2-3 random frames)
+            if random.random() > 0.6:
+                erase_idx = random.randint(0, self.max_frames - 3)
+                frames[erase_idx : erase_idx + 2] = 0.0
 
         # Spatio-Temporal Motion Blend
         blended = compute_motion(frames)
@@ -147,12 +157,11 @@ class MultiClipUCFDataset(Dataset):
         return tensor, label
 
 # ==============================================================================
-# DATASET DISCOVERY & MULTI-CLIP SLICING
+# DATASET DISCOVERY & MOTION-WEIGHTED SLICING
 # ==============================================================================
 def discover_and_slice_dataset(dataset_dir=Config.DATASET_DIR, clips_per_video=Config.CLIPS_PER_VIDEO):
     """
-    Discovers all 13 crime classes (excluding NormalVideos) and slices each video
-    into multiple temporal windows.
+    Discovers all 13 crime classes and generates motion-diverse slices across the videos.
     """
     video_groups = []
     search_dirs = []
@@ -166,13 +175,12 @@ def discover_and_slice_dataset(dataset_dir=Config.DATASET_DIR, clips_per_video=C
     for base_dir in search_dirs:
         for class_folder in sorted(os.listdir(base_dir)):
             if class_folder.lower() == "normalvideos":
-                continue  # Skip NormalVideos (Phase 1 handles Normal vs Crime)
+                continue
             
             class_path = os.path.join(base_dir, class_folder)
             if not os.path.isdir(class_path):
                 continue
             
-            # Map folder name to standard class index
             class_name = class_folder
             if class_name not in CLASS_TO_IDX:
                 matched = [c for c in CRIME_CLASSES if c.lower() in class_name.lower()]
@@ -183,7 +191,6 @@ def discover_and_slice_dataset(dataset_dir=Config.DATASET_DIR, clips_per_video=C
             
             class_idx = CLASS_TO_IDX[class_name]
 
-            # Group frames by original video ID
             video_frame_dict = defaultdict(list)
             for f in sorted(os.listdir(class_path)):
                 if f.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -200,30 +207,27 @@ def discover_and_slice_dataset(dataset_dir=Config.DATASET_DIR, clips_per_video=C
 
     print(f"\nDiscovered {len(video_groups)} total Crime Video Sequences across {len(CRIME_CLASSES)} Crime Categories.")
     
-    # Split at the video level (no data leakage)
+    # Split at video level
     labels = [vg[2] for vg in video_groups]
     train_vids, temp_vids = train_test_split(video_groups, test_size=0.20, stratify=labels, random_state=SEED)
     temp_labels = [tg[2] for tg in temp_vids]
     val_vids, test_vids = train_test_split(temp_vids, test_size=0.50, stratify=temp_labels, random_state=SEED)
 
-    # Slice videos into multiple clips
     def generate_clips(vids, num_clips, is_train=True):
         clip_list = []
         for vid_key, frame_paths, class_idx in vids:
             num_avail = len(frame_paths)
             if num_avail <= Config.MAX_FRAMES:
-                # Pad
                 paths = list(frame_paths)
                 while len(paths) < Config.MAX_FRAMES:
                     paths.append(paths[-1])
                 clip_list.append((paths, class_idx))
             else:
-                # Generate multiple temporal slices
                 step = max(1, (num_avail - Config.MAX_FRAMES) // max(1, num_clips - 1))
                 for i in range(num_clips):
                     start = min(i * step, num_avail - Config.MAX_FRAMES)
                     if is_train and start > 0:
-                        start = max(0, start + random.randint(-2, 2))
+                        start = max(0, start + random.randint(-4, 4))
                         start = min(start, num_avail - Config.MAX_FRAMES)
                     slice_paths = frame_paths[start : start + Config.MAX_FRAMES]
                     clip_list.append((slice_paths, class_idx))
@@ -237,28 +241,33 @@ def discover_and_slice_dataset(dataset_dir=Config.DATASET_DIR, clips_per_video=C
     return train_clips, val_clips, test_clips
 
 # ==============================================================================
-# PHASE 2: PRETRAINED VIDEO VISION TRANSFORMER ARCHITECTURE
+# PHASE 2: REGULARIZED VIDEO VISION TRANSFORMER
 # ==============================================================================
 class CrimeClassifierViT(nn.Module):
     """
-    Multi-Class Video Vision Transformer for Fine-Grained Crime Classification:
-    - Pretrained MobileNetV3-Large Spatial Feature Tokenizer (960D -> 512D)
-    - 1D Temporal Depthwise Conv (Local 3-frame continuous kinematics)
-    - 8-Head Temporal Multi-Head Self-Attention Transformer (Pre-LN)
+    Anti-Overfit Video Vision Transformer:
+    - Pretrained MobileNetV3-Large Spatial Backbone with FROZEN early layers (prevents background memorization)
+    - 1D Temporal Convolution for continuous kinematic trajectories
+    - 8-Head Temporal Self-Attention Transformer with high dropout (0.45)
     - 13-Class Classification Output Head
     """
-    def __init__(self, num_classes=NUM_CLASSES, num_frames=Config.MAX_FRAMES, d_model=512, num_layers=3, num_heads=8):
+    def __init__(self, num_classes=NUM_CLASSES, num_frames=Config.MAX_FRAMES, d_model=512, num_layers=2, num_heads=8):
         super(CrimeClassifierViT, self).__init__()
         
-        # 1. Spatial Tokenizer Backbone
+        # 1. Pretrained Spatial Tokenizer Backbone
         backbone = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.DEFAULT)
         self.spatial_backbone = backbone.features
+        
+        # FREEZE early spatial layers (prevents memorizing scene wallpapers / static rooms)
+        for param in list(self.spatial_backbone.parameters())[:-12]:
+            param.requires_grad = False
         
         self.proj = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
             nn.Linear(960, d_model),
-            nn.LayerNorm(d_model)
+            nn.LayerNorm(d_model),
+            nn.Dropout(p=Config.DROPOUT)
         )
         
         # 2. Local 1D Temporal Convolution
@@ -267,14 +276,14 @@ class CrimeClassifierViT(nn.Module):
         # 3. Learnable [CLS] Token & Positional Encodings
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_frames + 1, d_model))
-        self.pos_drop = nn.Dropout(p=0.1)
+        self.pos_drop = nn.Dropout(p=Config.DROPOUT)
         
-        # 4. Temporal Multi-Head Self-Attention Transformer
+        # 4. Temporal Multi-Head Self-Attention Transformer (Pre-LN)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=num_heads,
-            dim_feedforward=1024,
-            dropout=0.2,
+            dim_feedforward=512,
+            dropout=Config.DROPOUT,
             activation='gelu',
             batch_first=True,
             norm_first=True
@@ -282,11 +291,11 @@ class CrimeClassifierViT(nn.Module):
         self.temporal_transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.norm = nn.LayerNorm(d_model)
         
-        # 5. 13-Class Classification Head
+        # 5. 13-Class Head with Dropout
         self.head = nn.Sequential(
             nn.Linear(d_model, 256),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(Config.DROPOUT),
             nn.Linear(256, num_classes)
         )
         
@@ -383,7 +392,7 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
 def eval_epoch(model, dataloader, criterion, device, use_tta=Config.USE_TTA):
     model.eval()
     running_loss, correct, total = 0.0, 0, 0
-    y_true, y_pred = [], []
+    y_true, y_pred, y_probs = [], [], []
     
     with torch.no_grad():
         for inputs, labels in dataloader:
@@ -406,10 +415,11 @@ def eval_epoch(model, dataloader, criterion, device, use_tta=Config.USE_TTA):
 
             y_true.extend(labels.cpu().numpy().flatten())
             y_pred.extend(predicted.cpu().numpy().flatten())
+            y_probs.extend(probs.cpu().numpy())
 
     acc = 100.0 * correct / total
     avg_loss = running_loss / total
-    return avg_loss, acc, np.array(y_true), np.array(y_pred)
+    return avg_loss, acc, np.array(y_true), np.array(y_pred), np.array(y_probs)
 
 # ==============================================================================
 # MAIN TRAINING PIPELINE
@@ -419,10 +429,11 @@ def main():
 
     # Dry run sanity check
     if "--dry-run" in sys.argv:
-        print("\n--- DRY RUN: PHASE 2 VIDEO VISION TRANSFORMER ---")
+        print("\n--- DRY RUN: REGULARIZED PHASE 2 VIDEO VISION TRANSFORMER ---")
         model = CrimeClassifierViT(num_classes=NUM_CLASSES).to(device)
         total_params = sum(p.numel() for p in model.parameters())
-        print(f"Phase 2 Model Loaded. Total Parameters: {total_params:,}")
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Phase 2 Model Loaded: {total_params:,} total parameters ({trainable_params:,} trainable).")
         dummy = torch.randn(2, 3, Config.MAX_FRAMES, Config.TARGET_SIZE[0], Config.TARGET_SIZE[1]).to(device)
         out = model(dummy)
         print(f"Forward Pass Output Shape: {out.shape} (Expected: [2, {NUM_CLASSES}])")
@@ -435,9 +446,9 @@ def main():
         print(f"\n[Notice] No video clips discovered in '{Config.DATASET_DIR}'.")
         return
 
-    train_dataset = MultiClipUCFDataset(train_clips, augment=True)
-    val_dataset   = MultiClipUCFDataset(val_clips, augment=False)
-    test_dataset  = MultiClipUCFDataset(test_clips, augment=False)
+    train_dataset = MotionAwareUCFDataset(train_clips, augment=True)
+    val_dataset   = MotionAwareUCFDataset(val_clips, augment=False)
+    test_dataset  = MotionAwareUCFDataset(test_clips, augment=False)
 
     num_workers = 0
     train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True, num_workers=num_workers)
@@ -446,7 +457,8 @@ def main():
 
     model = CrimeClassifierViT(num_classes=NUM_CLASSES).to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nPhase 2 Model Initialized: {total_params:,} parameters across {NUM_CLASSES} Crime Categories.")
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\nPhase 2 Model Initialized: {total_params:,} total ({trainable_params:,} trainable) parameters across {NUM_CLASSES} Crime Categories.")
 
     # Calculate class weights for balanced learning
     train_labels = [c[1] for c in train_clips]
@@ -458,35 +470,22 @@ def main():
 
     criterion = nn.CrossEntropyLoss(weight=weights_tensor, label_smoothing=Config.LABEL_SMOOTHING)
     
-    optimizer = optim.AdamW([
-        {'params': model.spatial_backbone.parameters(), 'lr': Config.BACKBONE_LR},
-        {'params': model.proj.parameters(), 'lr': Config.BASE_LR},
-        {'params': model.temporal_conv.parameters(), 'lr': Config.BASE_LR},
-        {'params': model.temporal_transformer.parameters(), 'lr': Config.BASE_LR},
-        {'params': model.head.parameters(), 'lr': Config.BASE_LR},
-        {'params': [model.cls_token, model.pos_embed], 'lr': Config.BASE_LR}
-    ], weight_decay=Config.WEIGHT_DECAY)
+    # Train only unfrozen layers + Transformer
+    trainable_named_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = optim.AdamW(trainable_named_params, lr=Config.BASE_LR, weight_decay=Config.WEIGHT_DECAY)
 
-    warmup_epochs = 2
-    def lr_lambda(epoch):
-        if epoch < warmup_epochs:
-            return float(epoch + 1) / float(warmup_epochs)
-        else:
-            progress = float(epoch - warmup_epochs) / float(max(1, Config.EPOCHS - warmup_epochs))
-            return 0.5 * (1.0 + np.cos(np.pi * progress))
-
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-5)
     scaler = torch.amp.GradScaler('cuda', enabled=(device.type == "cuda"))
 
     best_val_acc = 0.0
     no_improve_count = 0
 
-    print("\nStarting Phase 2 (13-Class VideoViT) Training...")
+    print("\nStarting Regularized Phase 2 Training...")
     print("=" * 65)
 
     for epoch in range(Config.EPOCHS):
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, scaler, device)
-        val_loss, val_acc, _, _ = eval_epoch(model, val_loader, criterion, device, use_tta=Config.USE_TTA)
+        val_loss, val_acc, _, _, _ = eval_epoch(model, val_loader, criterion, device, use_tta=Config.USE_TTA)
         scheduler.step()
 
         print(f"Epoch [{epoch+1:02d}/{Config.EPOCHS:02d}] | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
@@ -511,9 +510,17 @@ def main():
     if os.path.exists(Config.BEST_MODEL_PATH):
         model.load_state_dict(torch.load(Config.BEST_MODEL_PATH, map_location=device))
     
-    test_loss, test_acc, y_true, y_pred = eval_epoch(model, test_loader, criterion, device, use_tta=True)
+    test_loss, test_acc, y_true, y_pred, y_probs = eval_epoch(model, test_loader, criterion, device, use_tta=True)
     
-    print(f"\nFinal Phase 2 Multi-Class Test Accuracy: {test_acc:.2f}%")
+    print(f"\nFinal Phase 2 Multi-Class Top-1 Test Accuracy: {test_acc:.2f}%")
+    try:
+        top2_acc = top_k_accuracy_score(y_true, y_probs, k=2, labels=list(range(NUM_CLASSES))) * 100
+        top3_acc = top_k_accuracy_score(y_true, y_probs, k=3, labels=list(range(NUM_CLASSES))) * 100
+        print(f"Final Phase 2 Multi-Class Top-2 Accuracy: {top2_acc:.2f}%")
+        print(f"Final Phase 2 Multi-Class Top-3 Accuracy: {top3_acc:.2f}%")
+    except Exception:
+        pass
+
     print("\nCLASSIFICATION REPORT:")
     present_classes = sorted(list(set(y_true) | set(y_pred)))
     target_names = [IDX_TO_CLASS[i] for i in present_classes]
