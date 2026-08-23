@@ -6,10 +6,10 @@ import os
 import sys
 
 # Configure GPU MIG compatibility environment flags
-os.environ["CUDA_VISIBLE_DEVICES"] = "MIG-1f695d4f-ec71-5ad3-a117-778dcddf27d1"
-os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "0"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "MIG-1f695d4f-ec71-5ad3-a117-778dcddf27d1"
+# os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "0"
+# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
+# os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
 
 import random
 import cv2
