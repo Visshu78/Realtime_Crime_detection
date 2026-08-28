@@ -38,6 +38,8 @@ Dataset/*
 !Dataset/datasetLoader.py
 UCF Dataset/
 UCF_Dataset/
+XD_Violence_Dataset/
+XD_Violence/
 
 # Miscellaneous OS files
 .DS_Store
