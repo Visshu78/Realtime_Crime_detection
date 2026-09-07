@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚨 PHASE 2: 6-CLASS FINE-GRAINED CRIME ACTION CLASSIFIER (XD-Violence VideoViT)
+# 🚨 PHASE 2: OPTIMIZED MULTI-CLIP 6-CLASS VIDEO VISION TRANSFORMER (XD-Violence)
 # ==============================================================================
 
 import os
@@ -63,19 +63,17 @@ class Config:
 
     MAX_FRAMES = 24
     TARGET_SIZE = (160, 160)
-    CLIPS_PER_VIDEO = 6
+    CLIPS_PER_VIDEO = 5       # Generates 5 diverse temporal sliding slices per video (5x more training data!)
     BATCH_SIZE = 16
     EPOCHS = 35
-    BASE_LR = 3e-4
-    BACKBONE_LR = 3e-5
-    WEIGHT_DECAY = 1e-4
+    BASE_LR = 4e-4
+    BACKBONE_LR = 4e-5
+    WEIGHT_DECAY = 5e-4
     DROPOUT = 0.35
     LABEL_SMOOTHING = 0.05
     USE_TTA = True
+    EARLY_STOP_PATIENCE = 10
 
-    EARLY_STOP_PATIENCE = 8
-
-# 6 Distinct XD-Violence Crime Action Classes (Excluding Normal)
 XD_CRIME_CLASSES = [
     "Fighting",       # Brawls & physical violence
     "Shooting",       # Firearms & active shooter
@@ -90,7 +88,7 @@ CLASS_TO_IDX = {cls_name: i for i, cls_name in enumerate(XD_CRIME_CLASSES)}
 IDX_TO_CLASS = {i: cls_name for i, cls_name in enumerate(XD_CRIME_CLASSES)}
 
 # ==============================================================================
-# DATASET LOADER FOR VIDEO FILES / CLIPS
+# DATASET LOADER WITH MULTI-CLIP SAMPLING & MOTION BLENDING
 # ==============================================================================
 def compute_motion(frames):
     motion = np.abs(np.diff(frames, axis=0))
@@ -99,46 +97,32 @@ def compute_motion(frames):
     blended = 0.70 * frames + 0.30 * motion
     return blended
 
-class XDViolenceDataset(Dataset):
-    def __init__(self, video_items, max_frames=Config.MAX_FRAMES, target_size=Config.TARGET_SIZE, augment=False):
-        self.video_items = video_items  # List of (video_path, class_idx)
+class XDSlicedDataset(Dataset):
+    def __init__(self, clip_samples, max_frames=Config.MAX_FRAMES, target_size=Config.TARGET_SIZE, augment=False):
+        self.clip_samples = clip_samples  # List of (video_path, start_frame, class_idx)
         self.max_frames = max_frames
         self.target_size = target_size
         self.augment = augment
 
     def __len__(self):
-        return len(self.video_items)
+        return len(self.clip_samples)
 
     def __getitem__(self, idx):
-        video_path, class_idx = self.video_items[idx]
+        video_path, start_frame, class_idx = self.clip_samples[idx]
         
         cap = cv2.VideoCapture(video_path)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, start_frame))
         
         frames = []
-        if total_frames <= self.max_frames:
-            while True:
-                ret, frame = cap.read()
-                if not ret: break
-                frame = cv2.resize(frame, self.target_size).astype("float32") / 255.0
-                frames.append(frame)
-            cap.release()
-            while len(frames) < self.max_frames:
-                frames.append(frames[-1] if len(frames) > 0 else np.zeros((self.target_size[0], self.target_size[1], 3), dtype=np.float32))
-        else:
-            if self.augment:
-                start_frame = random.randint(0, total_frames - self.max_frames)
-            else:
-                start_frame = (total_frames - self.max_frames) // 2
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-            for _ in range(self.max_frames):
-                ret, frame = cap.read()
-                if not ret: break
-                frame = cv2.resize(frame, self.target_size).astype("float32") / 255.0
-                frames.append(frame)
-            cap.release()
-            while len(frames) < self.max_frames:
-                frames.append(frames[-1] if len(frames) > 0 else np.zeros((self.target_size[0], self.target_size[1], 3), dtype=np.float32))
+        for _ in range(self.max_frames):
+            ret, frame = cap.read()
+            if not ret: break
+            frame = cv2.resize(frame, self.target_size).astype("float32") / 255.0
+            frames.append(frame)
+        cap.release()
+
+        while len(frames) < self.max_frames:
+            frames.append(frames[-1] if len(frames) > 0 else np.zeros((self.target_size[0], self.target_size[1], 3), dtype=np.float32))
 
         frames = np.array(frames[:self.max_frames])
 
@@ -160,26 +144,23 @@ class XDViolenceDataset(Dataset):
         return tensor, label
 
 # ==============================================================================
-# DATASET DISCOVERY
+# DATASET DISCOVERY & MULTI-CLIP SLICING
 # ==============================================================================
-def discover_xd_dataset(dataset_dir=Config.DATASET_DIR):
+def discover_and_slice_xd(dataset_dir=Config.DATASET_DIR, clips_per_video=Config.CLIPS_PER_VIDEO):
     video_items = []
     if not os.path.exists(dataset_dir):
-        print(f"[Notice] Dataset directory '{dataset_dir}' not found yet. Please ensure download completes.")
-        return video_items
+        print(f"[Notice] Dataset directory '{dataset_dir}' not found.")
+        return [], [], []
 
-    # Scan for folders / video files matching the 6 classes
     for root, dirs, files in os.walk(dataset_dir):
         for f in files:
             if f.lower().endswith(('.mp4', '.avi', '.mkv', '.mov')):
                 full_path = os.path.join(root, f)
                 lower_path = full_path.lower()
                 
-                # Exclude normal / non-violence videos (Phase 1 handles normal)
                 if "normal" in lower_path or "nonviolence" in lower_path:
                     continue
                 
-                # Match against the 6 XD-Violence crime classes
                 matched_class = None
                 for cls_name in XD_CRIME_CLASSES:
                     if cls_name.lower() in lower_path:
@@ -196,23 +177,46 @@ def discover_xd_dataset(dataset_dir=Config.DATASET_DIR):
                         break
 
                 if matched_class:
-                    class_idx = CLASS_TO_IDX[matched_class]
-                    video_items.append((full_path, class_idx))
+                    video_items.append((full_path, CLASS_TO_IDX[matched_class]))
 
     print(f"\nDiscovered {len(video_items)} total Crime Videos across {len(XD_CRIME_CLASSES)} XD-Violence Categories.")
-    return video_items
+
+    # Video-level split
+    labels = [vi[1] for vi in video_items]
+    train_vids, temp_vids = train_test_split(video_items, test_size=0.20, stratify=labels, random_state=SEED)
+    temp_labels = [ti[1] for ti in temp_vids]
+    val_vids, test_vids = train_test_split(temp_vids, test_size=0.50, stratify=temp_labels, random_state=SEED)
+
+    def generate_slices(vids, num_clips, is_train=True):
+        slices = []
+        for vid_path, class_idx in vids:
+            cap = cv2.VideoCapture(vid_path)
+            total_f = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+
+            if total_f <= Config.MAX_FRAMES:
+                slices.append((vid_path, 0, class_idx))
+            else:
+                step = max(1, (total_f - Config.MAX_FRAMES) // max(1, num_clips))
+                for i in range(num_clips):
+                    start = min(i * step, total_f - Config.MAX_FRAMES)
+                    if is_train and start > 0:
+                        start = max(0, start + random.randint(-4, 4))
+                        start = min(start, total_f - Config.MAX_FRAMES)
+                    slices.append((vid_path, start, class_idx))
+        return slices
+
+    train_clips = generate_slices(train_vids, clips_per_video, is_train=True)
+    val_clips   = generate_slices(val_vids, 2, is_train=False)
+    test_clips  = generate_slices(test_vids, 2, is_train=False)
+
+    print(f"Generated Slices: {len(train_clips)} Train Clips | {len(val_clips)} Val Clips | {len(test_clips)} Test Clips")
+    return train_clips, val_clips, test_clips
 
 # ==============================================================================
 # MODEL ARCHITECTURE (VideoViT)
 # ==============================================================================
 class XDCrimeClassifierViT(nn.Module):
-    """
-    6-Class Video Vision Transformer for XD-Violence Action Recognition:
-    - Pretrained MobileNetV3-Large Spatial Feature Tokenizer (960D -> 512D)
-    - 1D Temporal Convolution (Continuous Kinematic Motions)
-    - 3-Layer 8-Head Temporal Transformer with Pre-LN LayerNorm
-    - 6-Class Classification Head
-    """
     def __init__(self, num_classes=NUM_CLASSES, num_frames=Config.MAX_FRAMES, d_model=512, num_layers=3, num_heads=8):
         super(XDCrimeClassifierViT, self).__init__()
         
@@ -273,34 +277,13 @@ class XDCrimeClassifierViT(nn.Module):
         return logits
 
 # ==============================================================================
-# INFERENCE FUNCTION
-# ==============================================================================
-def predict_xd_crime_type(video_tensor, model_path=Config.BEST_MODEL_PATH):
-    if not os.path.exists(model_path):
-        print(f"Error: Checkpoint '{model_path}' not found.")
-        return None, 0.0
-
-    model = XDCrimeClassifierViT(num_classes=NUM_CLASSES).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-
-    with torch.no_grad():
-        logits = model(video_tensor.to(device))
-        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-
-    top_idx = np.argmax(probs)
-    predicted_crime = IDX_TO_CLASS[top_idx]
-    confidence = probs[top_idx]
-    return predicted_crime, confidence
-
-# ==============================================================================
 # TRAINING & EVALUATION FUNCTIONS
 # ==============================================================================
 def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
     model.train()
     running_loss, correct, total = 0.0, 0, 0
     
-    pbar = tqdm(train_loader, desc="Training XD-Violence VideoViT", unit="batch", leave=False)
+    pbar = tqdm(train_loader, desc="Training XD VideoViT", unit="batch", leave=False)
     for inputs, labels in pbar:
         inputs, labels = inputs.to(device), labels.to(device)
         
@@ -359,37 +342,30 @@ def eval_epoch(model, dataloader, criterion, device, use_tta=Config.USE_TTA):
     return avg_loss, acc, np.array(y_true), np.array(y_pred)
 
 # ==============================================================================
-# MAIN TRAINING PIPELINE
+# MAIN PIPELINE
 # ==============================================================================
 def main():
     os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
 
     if "--dry-run" in sys.argv:
-        print("\n--- DRY RUN: XD-VIOLENCE 6-CLASS VIDEO TRANSFORMER ---")
+        print("\n--- DRY RUN: MULTI-CLIP XD-VIOLENCE VIDEO VISION TRANSFORMER ---")
         model = XDCrimeClassifierViT(num_classes=NUM_CLASSES).to(device)
         total_params = sum(p.numel() for p in model.parameters())
-        print(f"Model Loaded: {total_params:,} parameters across {NUM_CLASSES} Action Classes.")
+        print(f"Model Initialized: {total_params:,} parameters across {NUM_CLASSES} classes.")
         dummy = torch.randn(2, 3, Config.MAX_FRAMES, Config.TARGET_SIZE[0], Config.TARGET_SIZE[1]).to(device)
         out = model(dummy)
-        print(f"Forward Pass Output Shape: {out.shape} (Expected: [2, {NUM_CLASSES}])")
+        print(f"Forward Pass Shape: {out.shape} (Expected: [2, {NUM_CLASSES}])")
         print("Dry run completed successfully.")
         return
 
-    video_items = discover_xd_dataset()
-    if len(video_items) == 0:
-        print(f"\n[Notice] No video files found in '{Config.DATASET_DIR}'. Ensure download is complete.")
+    train_clips, val_clips, test_clips = discover_and_slice_xd()
+    if len(train_clips) == 0:
+        print(f"\n[Notice] No clips generated from '{Config.DATASET_DIR}'.")
         return
 
-    labels = [vi[1] for vi in video_items]
-    train_items, temp_items = train_test_split(video_items, test_size=0.20, stratify=labels, random_state=SEED)
-    temp_labels = [ti[1] for ti in temp_items]
-    val_items, test_items = train_test_split(temp_items, test_size=0.50, stratify=temp_labels, random_state=SEED)
-
-    print(f"Dataset Split: {len(train_items)} Train | {len(val_items)} Val | {len(test_items)} Test Videos")
-
-    train_dataset = XDViolenceDataset(train_items, augment=True)
-    val_dataset   = XDViolenceDataset(val_items, augment=False)
-    test_dataset  = XDViolenceDataset(test_items, augment=False)
+    train_dataset = XDSlicedDataset(train_clips, augment=True)
+    val_dataset   = XDSlicedDataset(val_clips, augment=False)
+    test_dataset  = XDSlicedDataset(test_clips, augment=False)
 
     num_workers = 0
     train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True, num_workers=num_workers)
@@ -398,9 +374,9 @@ def main():
 
     model = XDCrimeClassifierViT(num_classes=NUM_CLASSES).to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nPhase 2 XD Model Initialized: {total_params:,} parameters across {NUM_CLASSES} Action Classes.")
+    print(f"\nPhase 2 Model Initialized: {total_params:,} parameters across {NUM_CLASSES} Action Classes.")
 
-    train_labels = [ti[1] for ti in train_items]
+    train_labels = [c[2] for c in train_clips]
     class_counts = np.bincount(train_labels, minlength=NUM_CLASSES)
     total_samples = len(train_labels)
     class_weights = total_samples / (NUM_CLASSES * np.maximum(class_counts, 1).astype(np.float32))
@@ -431,7 +407,7 @@ def main():
     best_val_acc = 0.0
     no_improve_count = 0
 
-    print("\nStarting Phase 2 XD-Violence Action Training...")
+    print("\nStarting Optimized Multi-Clip XD-Violence Training...")
     print("=" * 65)
 
     for epoch in range(Config.EPOCHS):
