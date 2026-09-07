@@ -100,11 +100,16 @@
   4. 🚨 **`Vandalism_Disturbance`** (*Vandalism, Arrest*) — 100 videos
 * **Outcome**: Test accuracy immediately jumped from **22.61% $\to$ 52.37%** (Validation: 56.05%).
 
-### 📌 Decision 2.4: Multi-Modal Action + Object Detection Strategy
-* **Decision**: For production deployment, instead of relying purely on video motion to separate ambiguous crimes (e.g. *Assault vs Stabbing vs Shooting*), the system pairs the **Action Classifier** with **Stage 3A YOLOv8 Object Detection**:
-  * Action (*Physical Conflict*) + Object (*Knife*) $\longrightarrow$ **`Stabbing / Knife Assault`**
-  * Action (*Physical Conflict*) + Object (*Gun*) $\longrightarrow$ **`Armed Shooting`**
-  * Action (*Theft*) + Object (*Crowbar / Bag*) $\longrightarrow$ **`Burglary`**
+### 📌 Decision 2.5: Transition to XD-Violence Dataset Benchmark (71.23% Test Accuracy)
+* **Context**: While UCF-Crime 4-clustering improved accuracy from 22.6% to 52.4%, the noisy 240p untrimmed clips limited overall precision.
+* **Decision**: Transitioned Phase 2 to the large-scale **`XD-Violence` Dataset** (2,115 videos across 6 distinct categories: *Fighting, Shooting, Explosion, CarAccident, Riot, Abuse*).
+* **Outcome**:
+  * **Test Accuracy**: **`71.23%`** (Macro: 65.21%, Weighted F1: **`71.41%`**)
+  * **Car Accident Precision**: **`92.86%`**
+  * **Riot / Mob Violence Precision**: **`75.44%`**
+  * **Explosion Precision**: **`71.43%`**
+  * **Fighting Precision**: **`76.67%`**
+  * Saved Checkpoint: `Optimisedmodel/best_xd_crime_classifier.pth` (38.4 MB)
 
 ---
 
