@@ -3,8 +3,8 @@
 ========================================================================================
 Project Repository: https://github.com/Visshu78/Realtime_Crime_detection
 Dataset 1 (Phase 1): Real Life Violence Situations Dataset (2,000 CCTV Videos: 1,000 Violent / 1,000 Normal)
-Dataset 2 (Phase 2): UCF-Crime Dataset (950 Crime Videos across 13 Categories)
-Evaluation Protocol: 20% Held-Out Isolated Test Set with Test-Time Augmentation (TTA)
+Dataset 2 (Phase 2): XD-Violence Dataset (2,115 Crime Videos across 6 Distinct Categories)
+Evaluation Protocol: Held-Out Isolated Test Set with Test-Time Augmentation (TTA)
 
 ========================================================================================
 📊 PHASE 1: BINARY CRIME DETECTION GATE (Violence vs Non-Violence)
@@ -33,29 +33,35 @@ Key Achievement: Caught 96 out of 100 violent CCTV incidents (96.0% Crime Recall
 Saved Model Checkpoint: Optimisedmodel/best_3dcnn_crime_detector.pth (38.4 MB)
 
 ========================================================================================
-🥊 PHASE 2: MULTI-CLASS FINE-GRAINED CRIME ACTION RECOGNITION (UCF-Crime)
+🥊 PHASE 2: 6-CLASS FINE-GRAINED CRIME ACTION RECOGNITION (XD-Violence Benchmark)
 ========================================================================================
 Triggered only when Phase 1 flags an active crime event (Threat P > 0.50).
 
 ----------------------------------------------------------------------------------------
-Experiment / Architecture               Classes      Train Acc   Val Acc    Top-1 Test   Top-3 Test   Notes / Findings
+Model / Dataset                         Classes      Train Acc   Val Acc    Test Acc   Weighted F1   Status
 ----------------------------------------------------------------------------------------
-1. SlowFast Net (14 Classes)            14 Classes   54.0%       51.58%     49.47%       --           Suffered from 19:1 NormalVideos majority class bias.
-2. Naive VideoViT (13 Classes)          13 Classes   97.75%      33.16%     28.91%       --           Overfit to static room wallpapers (unfrozen backbone).
-3. Regularized VideoViT (Frozen Spatial) 13 Classes   96.38%      29.12%     22.61%       47.35%       Confused by identical physical actions (Fight vs Assault).
+1. UCF-Crime (13 Overlapping Classes)   13 Classes   96.38%      29.12%     22.61%     22.05%        Overfit due to overlapping legal labels.
+2. UCF-Crime (4 Action Clusters)        4 Clusters   98.62%      56.05%     52.37%     51.20%        Improved with action clustering.
+3. XD-Violence VideoViT (6 Classes) 🏆   6 Classes    72.99%      66.82%     71.23%     71.41%        [CURRENT BEST CHAMPION]
 ----------------------------------------------------------------------------------------
 
-🔍 Root Cause of 13-Class Standstill:
-In UCF-Crime, 13 classes are legal penal code labels, NOT visually distinct actions:
-- Physical Conflict: "Fighting", "Assault", "Abuse", and "Shooting" share identical wrestling/striking kinematics.
-- Property Theft: "Burglary", "Stealing", "Robbery", and "Shoplifting" share identical hand-reaching/running kinematics.
+📈 XD-Violence VideoViT Detailed Test Set Classification Report (212 Held-Out Crime Videos):
+                  Precision    Recall    F1-Score   Support
+     Fighting     0.7667      0.4694     0.5823       49
+     Shooting     0.4762      0.6897     0.5634       29
+    Explosion     0.7143      0.6944     0.7042       36
+  CarAccident     0.9286      0.8298     0.8764       47
+         Riot     0.7544      0.8958     0.8190       48
+        Abuse     0.1667      0.3333     0.2222        3
 
-========================================================================================
-🚀 PHASE 2 OPTIMIZATION: 4 HIERARCHICAL META-ACTION CLUSTERS
-========================================================================================
-Grouping into physically distinct kinematic clusters:
-  Group 1: PHYSICAL VIOLENCE & ASSAULT    (Fighting, Assault, Abuse, Shooting)
-  Group 2: THEFT, ROBBERY & BREAK-IN      (Robbery, Burglary, Stealing, Shoplifting)
-  Group 3: DISASTER, HAZARD & ARSON       (Arson, Explosion, Road Accidents)
-  Group 4: VANDALISM & PUBLIC DISTURBANCE (Vandalism, Arrest)
+     Accuracy                            0.7123      212
+    Macro Avg     0.6345      0.6521     0.6279      212
+ Weighted Avg     0.7427      0.7123     0.7141      212
+
+Key Highlights:
+- Car Accident Detection: 92.86% Precision (F1: 87.64%)
+- Riot / Mob Violence: 75.44% Precision (F1: 81.90%)
+- Explosion / Blast: 71.43% Precision (F1: 70.42%)
+- Fighting & Physical Violence: 76.67% Precision
+Saved Model Checkpoint: Optimisedmodel/best_xd_crime_classifier.pth (38.4 MB)
 ========================================================================================
