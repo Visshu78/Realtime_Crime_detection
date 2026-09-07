@@ -1,0 +1,10 @@
+🏛️ END-TO-END MULTI-STAGE CRIME SURVEILLANCE & EVIDENCE PIPELINE,Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5
+"Hierarchical Real-Time Gating, Action Recognition, Weapon Detection, and Decision Fusion",,,,,
+,,,,,
+Pipeline Stage,Module / Model,Core Technology,Input Stream,Output / Role,Performance Metric
+Stage 1: Binary Gate,VideoViT v2,MobileNetV3 + 1D Conv + Transformer,24-Frame Video Clips (128x128),Filters Normal vs Crime Threat,95.50% Test Acc / 96.0% Recall
+Stage 2: Action Classifier,XD VideoViT,MobileNetV3 + 8-Head Attention ViT,24-Frame Video Clips (160x160),Categorizes Action (6 Classes),71.23% Test Acc / 74.3% Precision
+Stage 3A: Weapon Detector,YOLOv8,Deep CNN Bounding Box Detector,High-Resolution Keyframe (1080p),"Pinpoints Guns, Knives, Bats",>90.0% Detection Precision
+Stage 3B: Suspect Face ID,InsightFace,RetinaFace Detector + ArcFace Embeddings,Keyframe Suspect Crops,Extracts Face Evidence for Watchlist,512-D Identity Embedding
+Stage 4: Decision Fusion,Fusion Engine,Multi-Modal Rule & Softmax Boosting,Video Actions + Object Bounding Boxes,Disambiguates Weapons vs Brawls,95%+ Incident Categorization
+Stage 5: Police Dossier,Dossier Generator,Automated PDF/JSON Alert Dispatcher,Timestamped Alerts + Crops + Threat,Official Police Evidence Dossier,Automated Real-Time Alerts

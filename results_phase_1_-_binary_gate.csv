@@ -1,0 +1,15 @@
+🚨 PHASE 1: BINARY CRIME DETECTION GATE (VIOLENCE vs NON-VIOLENCE),Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5,Unnamed: 6,Unnamed: 7,Unnamed: 8
+"Dataset: Real Life Violence Situations (2,000 CCTV Videos: 1,000 Violent / 1,000 Normal)",,,,,,,,
+Evaluation: 200 Held-Out Isolated CCTV Videos with Test-Time Augmentation (TTA),,,,,,,,
+,,,,,,,,
+Model Architecture,Parameters,Model Size,Val Accuracy,Test Accuracy,Crime Recall,Crime Precision,F1-Score,Status
+1. Baseline 3D CNN,~1.2M,4.8 MB,88.00%,90.00%,90.00%,90.00%,90.00%,Baseline Model
+2. 3D Res-SE CNN,~3.6M,14.5 MB,89.00%,91.50%,90.00%,92.78%,91.37%,Channel Attention
+3. VideoViT v1 (Transformer),~6.7M,26.8 MB,96.00%,94.50%,95.00%,94.06%,94.53%,Transformer Encoder
+4. Optimized VideoViT v2 (TTA),~9.8M,38.4 MB,95.50%,95.50%,96.00%,95.05%,95.52%,🏆 CHAMPION MODEL
+,,,,,,,,
+📊 Detailed Test Classification Report: Optimized VideoViT v2 (200 Held-Out CCTV Videos),,,,,,,,
+Class Name,Precision,Recall,F1-Score,Support (Test Videos),,,,
+Non-Violent (Normal),95.96%,95.00%,95.48%,100,,,,
+Violent (Crime Event),95.05%,96.00%,95.52%,100,,,,
+Overall Accuracy / Macro Avg,95.50%,95.50%,95.50%,200,,,,
