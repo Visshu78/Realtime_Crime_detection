@@ -44,3 +44,7 @@ XD_Violence/
 # Miscellaneous OS files
 .DS_Store
 Thumbs.db
+incident_evidence/
+*.pt
+test_run.log
+papers.xlsx
