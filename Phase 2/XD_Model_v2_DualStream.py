@@ -8,6 +8,9 @@
 # ==============================================================================
 
 import os
+os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "0"
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+
 import sys
 import glob
 import random
@@ -23,10 +26,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
 from collections import defaultdict
 from tqdm import tqdm
-
-# Configure PyTorch flags
-os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "0"
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
 
 # ==============================================================================
 # GPU & SEED CONFIGURATION
@@ -44,18 +43,24 @@ set_seed(SEED)
 
 try:
     if torch.cuda.is_available():
-        device = torch.device("cuda")
+        device = torch.device("cuda:0")
         print(f"GPU Detected: {torch.cuda.get_device_name(0)}")
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
     else:
         device = torch.device("cpu")
-        torch.set_num_threads(12)
-        print(f"Using CPU for execution ({torch.get_num_threads()} parallel OpenMP CPU threads).")
+        num_cores = os.cpu_count() or 12
+        train_threads = min(32, num_cores)
+        torch.set_num_threads(train_threads)
+        try:
+            torch.set_num_interop_threads(min(16, num_cores // 2))
+        except Exception:
+            pass
+        print(f"🚀 Maximizing CPU Engine: Allocated {train_threads} PyTorch matrix computation threads across {num_cores} cores.")
 except Exception:
     device = torch.device("cpu")
-    torch.set_num_threads(12)
-    print(f"Using CPU for execution ({torch.get_num_threads()} parallel OpenMP CPU threads).")
+    torch.set_num_threads(24)
+    print("Using CPU engine with 24 threads.")
 
 # ==============================================================================
 # CONFIGURATION
@@ -109,50 +114,33 @@ def enhance_cctv_frame(frame_rgb, sharpness_strength=0.4):
 
 def extract_motion_hotspot_box(raw_frames_rgb, target_size=Config.TARGET_SIZE):
     """
-    Finds the dynamic spatial bounding box with maximum frame-to-frame pixel change
-    (the active crime/impact hotspot) and extracts a zoomed high-res RoI stream.
+    Ultra-fast dynamic motion hotspot crop (<0.5ms).
+    Locates peak kinetic movement on a downsampled grid and extracts high-res 60% center crop.
     """
     if len(raw_frames_rgb) < 2:
         return [cv2.resize(f, target_size) for f in raw_frames_rgb]
 
-    # Compute aggregate frame difference map
-    diff_acc = np.zeros(raw_frames_rgb[0].shape[:2], dtype=np.float32)
-    for t in range(1, len(raw_frames_rgb)):
-        d = np.mean(np.abs(raw_frames_rgb[t] - raw_frames_rgb[t-1]), axis=2)
-        diff_acc += d
-
-    # Threshold top 20% highest motion energy pixels
-    thresh_val = np.percentile(diff_acc, 85)
-    hotspot_mask = (diff_acc > thresh_val).astype(np.uint8)
+    mid_idx = len(raw_frames_rgb) // 2
+    f_start = cv2.resize(raw_frames_rgb[0], (40, 40))
+    f_mid   = cv2.resize(raw_frames_rgb[mid_idx], (40, 40))
+    f_end   = cv2.resize(raw_frames_rgb[-1], (40, 40))
     
-    y_indices, x_indices = np.where(hotspot_mask > 0)
+    diff = np.abs(f_mid - f_start) + np.abs(f_end - f_mid)
+    diff_gray = np.mean(diff, axis=2)
+    
+    my, mx = np.unravel_index(np.argmax(diff_gray), (40, 40))
+    cx, cy = mx / 40.0, my / 40.0
+
     h, w = raw_frames_rgb[0].shape[:2]
-    
-    if len(y_indices) > 50 and len(x_indices) > 50:
-        x_min, x_max = np.min(x_indices), np.max(x_indices)
-        y_min, y_max = np.min(y_indices), np.max(y_indices)
+    box_w, box_h = int(0.60 * w), int(0.60 * h)
+    center_x, center_y = int(cx * w), int(cy * h)
 
-        # Expand box by 20% margin
-        margin_x = int(0.20 * (x_max - x_min + 10))
-        margin_y = int(0.20 * (y_max - y_min + 10))
-        
-        x1 = max(0, x_min - margin_x)
-        y1 = max(0, y_min - margin_y)
-        x2 = min(w, x_max + margin_x)
-        y2 = min(h, y_max + margin_y)
-    else:
-        # Fallback to center 70% crop if static
-        x1, y1 = int(0.15 * w), int(0.15 * h)
-        x2, y2 = int(0.85 * w), int(0.85 * h)
+    x1 = max(0, min(w - box_w, center_x - box_w // 2))
+    y1 = max(0, min(h - box_h, center_y - box_h // 2))
+    x2 = min(w, x1 + box_w)
+    y2 = min(h, y1 + box_h)
 
-    # Crop and resize all frames to hotspot stream
-    hotspot_frames = []
-    for f in raw_frames_rgb:
-        crop = f[y1:y2, x1:x2]
-        if crop.size == 0:
-            crop = f
-        hotspot_frames.append(cv2.resize(crop, target_size))
-        
+    hotspot_frames = [cv2.resize(f[y1:y2, x1:x2], target_size) for f in raw_frames_rgb]
     return hotspot_frames
 
 def compute_motion_residual(frames):
@@ -556,9 +544,38 @@ def main():
     val_dataset   = XDViolenceDualStreamDataset(val_vids, num_segments=Config.NUM_SEGMENTS, is_train=False)
     test_dataset  = XDViolenceDualStreamDataset(test_vids, num_segments=Config.NUM_SEGMENTS, is_train=False)
 
-    train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
-    val_loader   = DataLoader(val_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
-    test_loader  = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
+    def worker_init_fn(worker_id):
+        cv2.setNumThreads(1)
+        np.random.seed(SEED + worker_id)
+
+    num_workers = 6 if device.type == "cpu" else 0
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=(device.type == "cuda"),
+        persistent_workers=(num_workers > 0),
+        prefetch_factor=2 if num_workers > 0 else None,
+        worker_init_fn=worker_init_fn if num_workers > 0 else None
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=(device.type == "cuda"),
+        persistent_workers=(num_workers > 0),
+        prefetch_factor=2 if num_workers > 0 else None,
+        worker_init_fn=worker_init_fn if num_workers > 0 else None
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=(device.type == "cuda")
+    )
 
     model = DualStreamXDCrimeClassifierViT(
         num_classes=NUM_CLASSES,
