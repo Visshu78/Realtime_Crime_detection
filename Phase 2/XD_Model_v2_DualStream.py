@@ -544,36 +544,25 @@ def main():
     val_dataset   = XDViolenceDualStreamDataset(val_vids, num_segments=Config.NUM_SEGMENTS, is_train=False)
     test_dataset  = XDViolenceDualStreamDataset(test_vids, num_segments=Config.NUM_SEGMENTS, is_train=False)
 
-    def worker_init_fn(worker_id):
-        cv2.setNumThreads(1)
-        np.random.seed(SEED + worker_id)
-
-    num_workers = 6 if device.type == "cpu" else 0
     train_loader = DataLoader(
         train_dataset,
         batch_size=Config.BATCH_SIZE,
         shuffle=True,
-        num_workers=num_workers,
-        pin_memory=(device.type == "cuda"),
-        persistent_workers=(num_workers > 0),
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=worker_init_fn if num_workers > 0 else None
+        num_workers=0,
+        pin_memory=(device.type == "cuda")
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
-        num_workers=num_workers,
-        pin_memory=(device.type == "cuda"),
-        persistent_workers=(num_workers > 0),
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=worker_init_fn if num_workers > 0 else None
+        num_workers=0,
+        pin_memory=(device.type == "cuda")
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=0,
         pin_memory=(device.type == "cuda")
     )
 
