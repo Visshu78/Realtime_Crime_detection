@@ -135,25 +135,26 @@ phase2_data = [
     ["2. Naive VideoViT (13 Classes)", "UCF-Crime", "13 Classes", "97.75%", "33.16%", "28.91%", "28.10%", "Overfit to background wallpapers (unfrozen backbone)"],
     ["3. Regularized VideoViT (13 Classes)", "UCF-Crime", "13 Classes", "96.38%", "29.12%", "22.61%", "22.05%", "Confused by identical motions (Fight vs Assault)"],
     ["4. Hierarchical Action Clusters", "UCF-Crime", "4 Clusters", "98.62%", "56.05%", "52.37%", "51.20%", "Improved with 4 kinematic meta-clusters"],
-    ["5. XD-Violence VideoViT 🏆", "XD-Violence", "6 Classes", "72.99%", "66.82%", "71.23%", "71.41%", "🏆 CURRENT BEST CHAMPION (Zero Ambiguity)"]
+    ["5. XD-Violence Single-Slice ViT", "XD-Violence", "6 Classes", "72.99%", "66.82%", "71.23%", "71.41%", "Zero visual ambiguity migration"],
+    ["6. Refined TSN VideoViT (USM Sharpness) 🏆", "XD-Violence", "6 Classes", "94.46%", "79.15%", "77.36%", "77.61%", "🏆 CHAMPION MODEL (TSN Sampling + Focal Loss)"]
 ]
 
 for row in phase2_data:
     ws2.append(row)
 
 ws2.append([])
-ws2.append(["📊 Detailed Test Classification Report: XD-Violence VideoViT (212 Held-Out Crime Videos)"])
+ws2.append(["📊 Detailed Test Classification Report: Refined TSN VideoViT (318 Held-Out Crime Videos)"])
 report_headers2 = ["Crime Action Category", "Precision", "Recall", "F1-Score", "Support (Test Videos)", "Physical Characteristics"]
 ws2.append(report_headers2)
 
 report_data2 = [
-    ["Car Accident (Collision)", "92.86%", "82.98%", "87.64%", "47", "High-speed vehicular crashes & impact dynamics"],
-    ["Riot / Mob Violence", "75.44%", "89.58%", "81.90%", "48", "Mass crowd disorder & multi-person street unrest"],
-    ["Explosion / Blast Hazard", "71.43%", "69.44%", "70.42%", "36", "Detonations, fireballs & sudden blast expansion"],
-    ["Fighting (Physical Brawl)", "76.67%", "46.94%", "58.23%", "49", "Hand-to-hand combat, wrestling & body strikes"],
-    ["Shooting (Active Gunfire)", "47.62%", "68.97%", "56.34%", "29", "Disambiguated to 98% with YOLOv8 weapon fusion"],
-    ["Abuse (One-on-One Assault)", "16.67%", "33.33%", "22.22%", "3", "Low test support; overlaps physically with fighting"],
-    ["Overall Weighted Benchmark", "74.27%", "71.23%", "71.41%", "212", "Final XD-Violence Champion Accuracy"]
+    ["Car Accident (Collision)", "90.41%", "94.29%", "92.31%", "70", "High-speed vehicular crashes & impact dynamics"],
+    ["Riot / Mob Violence", "90.14%", "90.14%", "90.14%", "71", "Mass crowd disorder & multi-person street unrest"],
+    ["Explosion / Blast Hazard", "82.00%", "75.93%", "78.85%", "54", "Detonations, fireballs & sudden blast expansion"],
+    ["Fighting (Physical Brawl)", "71.88%", "63.01%", "67.15%", "73", "Hand-to-hand combat, wrestling & body strikes"],
+    ["Shooting (Active Gunfire)", "51.92%", "60.00%", "55.67%", "45", "Disambiguated to 98% with YOLOv8 weapon fusion"],
+    ["Abuse (One-on-One Assault)", "25.00%", "40.00%", "30.77%", "5", "Low test support; overlaps physically with fighting"],
+    ["Overall Weighted Benchmark", "78.19%", "77.36%", "77.61%", "318", "Final Refined XD-Violence Champion Accuracy"]
 ]
 
 for row in report_data2:
