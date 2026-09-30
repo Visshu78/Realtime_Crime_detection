@@ -378,39 +378,38 @@ def create_research_presentation():
                 cell.fill.fore_color.rgb = WHITE
             for p in cell.text_frame.paragraphs:
                 p.font.name = "Arial"
-                p.font.size = Pt(11)
+                p.font.size = Pt(10.5)
                 p.font.bold = ("🏆" in row[0])
                 p.font.color.rgb = ACCENT_GREEN if "🏆" in row[0] else TEXT_DARK
                 p.alignment = PP_ALIGN.LEFT if col_idx == 0 else PP_ALIGN.CENTER
 
     # =========================================================================
-    # SLIDE 7: PHASE 2 FINE-GRAINED ACTION RECOGNITION
+    # SLIDE 7: PHASE 2 RESEARCH JOURNEY & MODEL TRIALS
     # =========================================================================
     s7 = prs.slides.add_slide(blank_layout)
-    add_header(s7, "Phase 2: 6-Class Fine-Grained Crime Action Recognition", "5. Phase 2 Methodology")
+    add_header(s7, "Phase 2 Research Progression: Iterative Model Trials", "5. Phase 2 Model Exploration")
 
     add_card(s7, 0.8, 1.6, 5.6, 5.2, CARD_BG)
     tb = s7.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
-    p.text = "🔬 XD-Violence Benchmark Design"
+    p.text = "🧪 Early Trials & The Label Ambiguity Crisis"
     p.font.name = "Arial"
-    p.font.size = Pt(15)
+    p.font.size = Pt(14)
     p.font.bold = True
-    p.font.color.rgb = NAVY
+    p.font.color.rgb = ACCENT_RED
 
-    p2_points = [
-        "Dataset Migration: Replaced noisy UCF-Crime (22% accuracy) with XD-Violence (2,115 CCTV videos across 6 distinct legal action classes).",
-        "Action Classes: Fighting (484), Shooting (294), Explosion (358), CarAccident (468), Riot (473), Abuse (38).",
-        "Split Protocol: 1,586 Train (4,758 augmented samples) / 211 Validation / 318 Held-Out Test Videos.",
-        "Optimization: AdamW optimizer (lr=1.5e-4, weight_decay=1e-4) with Cosine Annealing and label smoothing (0.08)."
+    trials_left = [
+        "Trial 1: UCF-Crime 13-Class Baseline (22.61% Test Acc)\n• Severe Overfitting: Train 96.38% vs Test 22.61%.\n• Diagnosis: Legal overlap (Stealing vs Shoplifting vs Burglary; Arrest vs Assault) cannot be resolved visually by CCTV cameras.",
+        "Trial 2: 4-Cluster Action Aggregation (52.37% Test Acc)\n• Grouped into Physical Violence, Property, Disasters, Vehicular.\n• Result: Jumped by +29.76%, proving visual motion clustering is essential for CCTV action recognition.",
+        "Trial 3: XD-Violence Single-Slice ViT (71.23% Test Acc)\n• Migrated to 6 distinct legal classes, achieving 71.23% but occasionally missing rapid momentary violent actions."
     ]
-    for pt in p2_points:
+    for pt in trials_left:
         p = tf.add_paragraph()
-        p.text = "• " + pt
+        p.text = pt
         p.font.name = "Arial"
-        p.font.size = Pt(11.5)
+        p.font.size = Pt(10)
         p.font.color.rgb = TEXT_DARK
         p.space_before = Pt(8)
 
@@ -419,31 +418,89 @@ def create_research_presentation():
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
-    p.text = "📊 Key Methodological Innovations"
+    p.text = "🏆 Optimized Champion & Dual-Stream Architecture"
     p.font.name = "Arial"
-    p.font.size = Pt(15)
+    p.font.size = Pt(14)
     p.font.bold = True
-    p.font.color.rgb = BG_DARK
+    p.font.color.rgb = ACCENT_GREEN
 
-    p2_innov = [
-        "Unsharp Masking (USM): Eliminates motion blur on high-speed punches, firearm recoils, and vehicle impacts.",
-        "TSN 24-Segment Sampling: Spans entire duration of incidents, preventing loss of localized rapid violent actions.",
-        "Class-Balanced Focal Loss: Dynamic weighting ensures minority classes (e.g. Abuse, Shooting) receive proportional gradient updates.",
-        "Validated Benchmark: 77.36% Test Accuracy | 78.19% Weighted Precision | 79.15% Peak Validation Accuracy."
+    trials_right = [
+        "Trial 4: Refined TSN-VideoViT (77.36% Test Acc) 🏆\n• 24-Segment Uniform TSN Temporal Sampling.\n• Unsharp Masking (USM) edge enhancement (boosted edge gradients by 40%).\n• Class-Balanced Focal Loss (beta=0.999) overcame extreme category imbalance (Abuse vs Riot).\n• Peak Val: 79.15% | Test Acc: 77.36% | Weighted F1: 77.61%.",
+        "Trial 5: Dual-Stream Motion Hotspot ViT (77.04% Test Acc)\n• Fuses global frame view with high-motion hotspot zoom stream via cross-attention.\n• Validated consistent high generalization across all crime categories."
     ]
-    for pt in p2_innov:
+    for pt in trials_right:
         p = tf.add_paragraph()
-        p.text = "• " + pt
+        p.text = pt
         p.font.name = "Arial"
-        p.font.size = Pt(11.5)
+        p.font.size = Pt(10)
         p.font.color.rgb = TEXT_DARK
         p.space_before = Pt(8)
 
     # =========================================================================
-    # SLIDE 8: PHASE 2 PER-CLASS EVALUATION & CONFUSION MATRIX
+    # SLIDE 8: PHASE 2 ALL MODELS COMPARATIVE ABLATION TABLE
     # =========================================================================
     s8 = prs.slides.add_slide(blank_layout)
-    add_header(s8, "Phase 2 Detailed Per-Class Evaluation & Confusion Matrix", "5. Phase 2 Results")
+    add_header(s8, "Phase 2 Comprehensive Model Exploration & Benchmark Matrix", "5. Phase 2 Benchmarks")
+
+    rows = 6
+    cols = 6
+    top = Inches(1.6)
+    left = Inches(0.8)
+    width = Inches(11.7)
+    height = Inches(5.0)
+
+    table_shape = s8.shapes.add_table(rows, cols, left, top, width, height)
+    table = table_shape.table
+
+    table.columns[0].width = Inches(3.2)
+    table.columns[1].width = Inches(1.6)
+    table.columns[2].width = Inches(1.5)
+    table.columns[3].width = Inches(1.8)
+    table.columns[4].width = Inches(1.8)
+    table.columns[5].width = Inches(1.8)
+
+    headers = ["Model Iteration", "Dataset / Setup", "Train Acc", "Val Acc", "Test Acc", "Weighted F1"]
+    for i, h in enumerate(headers):
+        cell = table.cell(0, i)
+        cell.text = h
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = NAVY
+        for p in cell.text_frame.paragraphs:
+            p.font.name = "Arial"
+            p.font.size = Pt(11)
+            p.font.bold = True
+            p.font.color.rgb = WHITE
+            p.alignment = PP_ALIGN.CENTER
+
+    p2_ablation = [
+        ("1. UCF-Crime 13-Class 3D CNN", "13 Legal Classes", "96.38%", "29.12%", "22.61%", "22.05%"),
+        ("2. UCF-Crime 4-Action Cluster", "4 Action Groups", "98.62%", "56.05%", "52.37%", "51.20%"),
+        ("3. XD Single-Slice ViT", "6 Action Classes", "72.99%", "66.82%", "71.23%", "71.41%"),
+        ("4. Refined TSN-VideoViT (USM) 🏆", "6 Action Classes", "94.46%", "79.15%", "77.36%", "77.61%"),
+        ("5. Dual-Stream Motion ViT", "Dual Stream Zoom", "96.24%", "76.78%", "77.04%", "77.31%")
+    ]
+
+    for row_idx, row in enumerate(p2_ablation, start=1):
+        for col_idx, val in enumerate(row):
+            cell = table.cell(row_idx, col_idx)
+            cell.text = val
+            cell.fill.solid()
+            if "🏆" in row[0]:
+                cell.fill.fore_color.rgb = RGBColor(240, 253, 244)
+            else:
+                cell.fill.fore_color.rgb = WHITE
+            for p in cell.text_frame.paragraphs:
+                p.font.name = "Arial"
+                p.font.size = Pt(10.5)
+                p.font.bold = ("🏆" in row[0])
+                p.font.color.rgb = ACCENT_GREEN if "🏆" in row[0] else TEXT_DARK
+                p.alignment = PP_ALIGN.LEFT if col_idx == 0 else PP_ALIGN.CENTER
+
+    # =========================================================================
+    # SLIDE 9: PHASE 2 DETAILED PER-CLASS EVALUATION & CONFUSION MATRIX
+    # =========================================================================
+    s9 = prs.slides.add_slide(blank_layout)
+    add_header(s9, "Phase 2 Per-Class Breakdown & Confusion Matrix Analysis", "5. Phase 2 Class Analysis")
 
     rows = 8
     cols = 5
@@ -452,7 +509,7 @@ def create_research_presentation():
     width = Inches(11.7)
     height = Inches(5.2)
 
-    table_shape = s8.shapes.add_table(rows, cols, left, top, width, height)
+    table_shape = s9.shapes.add_table(rows, cols, left, top, width, height)
     table = table_shape.table
 
     table.columns[0].width = Inches(3.2)
@@ -501,13 +558,13 @@ def create_research_presentation():
                 p.alignment = PP_ALIGN.LEFT if col_idx == 0 else PP_ALIGN.CENTER
 
     # =========================================================================
-    # SLIDE 9: PHASE 3A WEAPON DETECTION & MULTI-MODAL FUSION
+    # SLIDE 10: PHASE 3A WEAPON DETECTION & MULTI-MODAL FUSION
     # =========================================================================
-    s9 = prs.slides.add_slide(blank_layout)
-    add_header(s9, "Phase 3A: YOLOv8 Weapon Detection & Bayesian Fusion", "6. Evidence Localization")
+    s10 = prs.slides.add_slide(blank_layout)
+    add_header(s10, "Phase 3A: YOLOv8 Weapon Detection & Bayesian Fusion", "6. Evidence Localization")
 
-    add_card(s9, 0.8, 1.6, 5.6, 5.2, CARD_BG)
-    tb = s9.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
+    add_card(s10, 0.8, 1.6, 5.6, 5.2, CARD_BG)
+    tb = s10.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -531,8 +588,8 @@ def create_research_presentation():
         p.font.color.rgb = TEXT_DARK
         p.space_before = Pt(8)
 
-    add_card(s9, 6.9, 1.6, 5.6, 5.2, CARD_BG)
-    tb = s9.shapes.add_textbox(Inches(7.2), Inches(1.9), Inches(5.0), Inches(4.6))
+    add_card(s10, 6.9, 1.6, 5.6, 5.2, CARD_BG)
+    tb = s10.shapes.add_textbox(Inches(7.2), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -557,13 +614,13 @@ def create_research_presentation():
         p.space_before = Pt(8)
 
     # =========================================================================
-    # SLIDE 10: PHASE 3B SUSPECT FACIAL RECOGNITION
+    # SLIDE 11: PHASE 3B SUSPECT FACIAL RECOGNITION
     # =========================================================================
-    s10 = prs.slides.add_slide(blank_layout)
-    add_header(s10, "Phase 3B: Suspect Facial Recognition & Watchlist Matching", "6. Identity Extraction")
+    s11 = prs.slides.add_slide(blank_layout)
+    add_header(s11, "Phase 3B: Suspect Facial Recognition & Watchlist Matching", "6. Identity Extraction")
 
-    add_card(s10, 0.8, 1.6, 5.6, 5.2, CARD_BG)
-    tb = s10.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
+    add_card(s11, 0.8, 1.6, 5.6, 5.2, CARD_BG)
+    tb = s11.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -587,8 +644,8 @@ def create_research_presentation():
         p.font.color.rgb = TEXT_DARK
         p.space_before = Pt(8)
 
-    add_card(s10, 6.9, 1.6, 5.6, 5.2, CARD_BG)
-    tb = s10.shapes.add_textbox(Inches(7.2), Inches(1.9), Inches(5.0), Inches(4.6))
+    add_card(s11, 6.9, 1.6, 5.6, 5.2, CARD_BG)
+    tb = s11.shapes.add_textbox(Inches(7.2), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -613,10 +670,10 @@ def create_research_presentation():
         p.space_before = Pt(8)
 
     # =========================================================================
-    # SLIDE 11: PHASE 4 AUTOMATED POLICE FORENSIC DOSSIERS
+    # SLIDE 12: PHASE 4 AUTOMATED POLICE FORENSIC DOSSIERS
     # =========================================================================
-    s11 = prs.slides.add_slide(blank_layout)
-    add_header(s11, "Phase 4: Automated Police Forensic Dossier Generator", "7. Forensic Synthesis")
+    s12 = prs.slides.add_slide(blank_layout)
+    add_header(s12, "Phase 4: Automated Police Forensic Dossier Generator", "7. Forensic Synthesis")
 
     d_cards = [
         ("📁 Structured JSON Record", "Forensic Data Interchange", "Complete machine-readable crime metadata: Incident ID, Camera ID, GPS coordinates, Threat %, Action Class, Weapon Bounding Boxes, and Matched Suspect IDs.", NAVY),
@@ -627,8 +684,8 @@ def create_research_presentation():
 
     for idx, (dtitle, dsub, ddesc, dcolor) in enumerate(d_cards):
         left_pos = 0.8 + idx * 2.95
-        add_card(s11, left_pos, 1.6, 2.8, 5.2, CARD_BG, dcolor)
-        tb = s11.shapes.add_textbox(Inches(left_pos + 0.15), Inches(1.8), Inches(2.5), Inches(4.8))
+        add_card(s12, left_pos, 1.6, 2.8, 5.2, CARD_BG, dcolor)
+        tb = s12.shapes.add_textbox(Inches(left_pos + 0.15), Inches(1.8), Inches(2.5), Inches(4.8))
         tf = tb.text_frame
         tf.word_wrap = True
         
@@ -655,10 +712,10 @@ def create_research_presentation():
         p.space_before = Pt(10)
 
     # =========================================================================
-    # SLIDE 12: QUANTITATIVE PERFORMANCE MASTER TABLE
+    # SLIDE 13: QUANTITATIVE PERFORMANCE MASTER TABLE
     # =========================================================================
-    s12 = prs.slides.add_slide(blank_layout)
-    add_header(s12, "Quantitative Performance & Experimental Master Table", "8. Complete Benchmarks")
+    s13 = prs.slides.add_slide(blank_layout)
+    add_header(s13, "Quantitative Performance & Experimental Master Table", "8. Complete Benchmarks")
 
     rows = 7
     cols = 6
@@ -667,7 +724,7 @@ def create_research_presentation():
     width = Inches(11.7)
     height = Inches(5.2)
 
-    table_shape = s12.shapes.add_table(rows, cols, left, top, width, height)
+    table_shape = s13.shapes.add_table(rows, cols, left, top, width, height)
     table = table_shape.table
 
     table.columns[0].width = Inches(3.2)
@@ -716,13 +773,13 @@ def create_research_presentation():
                 p.alignment = PP_ALIGN.LEFT if col_idx == 0 else PP_ALIGN.CENTER
 
     # =========================================================================
-    # SLIDE 13: REAL-TIME INFERENCE LATENCY & EDGE DEPLOYMENT
+    # SLIDE 14: REAL-TIME INFERENCE LATENCY & EDGE DEPLOYMENT
     # =========================================================================
-    s13 = prs.slides.add_slide(blank_layout)
-    add_header(s13, "Real-Time Inference Latency & Edge Deployment Profile", "9. Computational Efficiency")
+    s14 = prs.slides.add_slide(blank_layout)
+    add_header(s14, "Real-Time Inference Latency & Edge Deployment Profile", "9. Computational Efficiency")
 
-    add_card(s13, 0.8, 1.6, 5.6, 5.2, CARD_BG)
-    tb = s13.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
+    add_card(s14, 0.8, 1.6, 5.6, 5.2, CARD_BG)
+    tb = s14.shapes.add_textbox(Inches(1.1), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -748,8 +805,8 @@ def create_research_presentation():
         p.font.color.rgb = TEXT_DARK
         p.space_before = Pt(8)
 
-    add_card(s13, 6.9, 1.6, 5.6, 5.2, CARD_BG)
-    tb = s13.shapes.add_textbox(Inches(7.2), Inches(1.9), Inches(5.0), Inches(4.6))
+    add_card(s14, 6.9, 1.6, 5.6, 5.2, CARD_BG)
+    tb = s14.shapes.add_textbox(Inches(7.2), Inches(1.9), Inches(5.0), Inches(4.6))
     tf = tb.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -774,15 +831,15 @@ def create_research_presentation():
         p.space_before = Pt(8)
 
     # =========================================================================
-    # SLIDE 14: RESEARCH CONTRIBUTIONS & FUTURE ROADMAP
+    # SLIDE 15: RESEARCH CONTRIBUTIONS & FUTURE ROADMAP
     # =========================================================================
-    s14 = prs.slides.add_slide(blank_layout)
-    bg14 = s14.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(13.333), Inches(7.5))
-    bg14.fill.solid()
-    bg14.fill.fore_color.rgb = BG_DARK
-    bg14.line.fill.background()
+    s15 = prs.slides.add_slide(blank_layout)
+    bg15 = s15.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(13.333), Inches(7.5))
+    bg15.fill.solid()
+    bg15.fill.fore_color.rgb = BG_DARK
+    bg15.line.fill.background()
 
-    tb = s14.shapes.add_textbox(Inches(1.0), Inches(1.0), Inches(11.3), Inches(5.5))
+    tb = s15.shapes.add_textbox(Inches(1.0), Inches(1.0), Inches(11.3), Inches(5.5))
     tf = tb.text_frame
     tf.word_wrap = True
     
